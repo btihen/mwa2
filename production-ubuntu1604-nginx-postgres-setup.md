@@ -42,6 +42,51 @@ exit
 ```
 
 
+#### add / configure postfix
+``` sh
+sudo apt-get install -y postfix heirloom-mailx
+sudo postconf -e "sender_canonical_maps = hash:/etc/postfix/sender_canonical"
+sudo postconf -e "recipient_canonical_maps = hash:/etc/postfix/recipient_canonical"
+sudo su
+touch /etc/postfix/sender_canonical
+touch /etc/postfix/recipient_canonical
+# setup to send from your alerty notification email address
+cat <<"EOF" > /etc/postfix/sender_canonical
+root     notify@your.domain.name
+ubuntu   notify@your.domain.name
+deploy   notify@your.domain.name
+manager  notify@your.domain.name
+logwatch notify@your.domain.name
+EOF
+# setup to SEND to your alert nofifing email address when there are problems
+cat <<"EOF" > /etc/postfix/recipient_canonical
+
+root    notify@your.alert.system
+        notify@your.alert.system
+deploy  notify@your.alert.system
+ubuntu  notify@your.alert.system
+manager notify@your.alert.system
+EOF
+exit
+sudo postmap /etc/postfix/sender_canonical
+sudo postmap /etc/postfix/recipient_canonical
+sudo service postfix reload
+```
+test postfix sends an email as expected!
+
+
+
+#### add / configure logwatch - _if desired_
+``` sh
+sudo apt-get -y install logwatch
+sudo vim /usr/share/logwatch/default.conf/logwatch.conf
+# find:
+# MailTo = root
+# change to:
+# MailTo = notify@your.alert.system
+```
+
+
 #### configure apticron alerts / checks 
 _if desired - helps knowing what's happening with updates
 ``` sh
@@ -51,7 +96,7 @@ point the EMAIL at your notification email address (or your email) - in the file
 ``` sh
 /etc/apticron/apticron.conf
 # change the email address
-EMAIL="your_warning@email.address"
+EMAIL="notify@your.alert.system"
 ```
 
 
@@ -466,8 +511,8 @@ server {
     # SSL OPTIONS
     ssl on;
     # ssl_session_timeout 5m;
-    ssl_certificate /etc/ssl/certs/wildcard.las.ch.combined.crt;
-    ssl_certificate_key /etc/ssl/private/wildcard.las.ch.key;
+    ssl_certificate /etc/ssl/certs/server_name.combined.crt;
+    ssl_certificate_key /etc/ssl/private/server_name.key;
     # ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
     # ssl_prefer_server_ciphers on;
     # ssl_ciphers "EECDH+ECDSA+AESGCM EECDH+aRSA+AESGCM EECDH+ECDSA+SHA384 EECDH+ECDSA+SHA256 EECDH+aRSA+SHA384 EECDH+aRSA+SHA256 EECDH+aRSA+RC4 EECDH EDH+aRSA RC4 !aNULL !eNULL !LOW !3DES !MD5 !EXP !PSK !SRP !DSS !RC4";
@@ -544,7 +589,241 @@ ideally now you see the repo folders
 #### setup monitoring -- we use MONIT
 monitoring postgres and gunicorn socket and nginx port 80 and 443
 
-#### postgres and config backups - if needed
+# add / configure monit -- for standard monitoring and web usage
+sudo apt-get install -y build-essential libssl-dev bison flex openssl monit
+
+sudo su
+touch /etc/monit/monit.pem
+# combine cert and and authority certs
+cat <<"EOF" >> /etc/monit/monit.pem
+-----BEGIN PRIVATE KEY-----
+private key here
+-----END PRIVATE KEY-----
+-----BEGIN CERTIFICATE-----
+cert here
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+cert here
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+cert here
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+cert here
+-----END CERTIFICATE-----
+EOF
+/usr/bin/openssl gendh 512 >> /etc/monit/monit.pem
+/usr/bin/openssl x509 -subject -dates -fingerprint -noout -in /etc/monit/monit.pem
+
+#### configure monit settings
+``` sh
+sudo su
+chmod 700 /etc/monit/monit.pem
+touch /etc/monit/monitrc
+cat <<"EOF" > /etc/monit/monitrc
+## Start Monit in the background (run as a daemon):
+#
+set daemon 120             # check services at 2-minute intervals
+  #with start delay 240     # optional: delay the first check by 4-minutes (by
+
+# set logfile syslog facility log_daemon
+set logfile /var/log/monit.log
+
+#
+# set idfile /var/.monit.id
+set idfile /var/lib/monit/id
+
+#
+set statefile /var/lib/monit/state
+
+#
+set eventqueue
+  basedir /var/lib/monit/events # set the base directory where events will be stored
+  slots 100                     # optionally limit the queue size
+
+# mail server
+set mailserver smtp.domain.name
+
+# send performance problems to itsupport for fixing during work hours
+set alert nofify@your.alert.system but not on { nonexist, instance, action, pid, ppid, status } mail-format {
+from: notify@your.domain.name
+subject: checkin - $DESCRIPTION
+message: $DATE - $ACTION $SERVICE
+}
+
+set httpd port 2812 and
+    SSL ENABLE
+    PEMFILE /etc/monit/monit.pem
+    ALLOWSELFCERTIFICATION
+    allow localhost
+    allow 10.10.20.10
+    allow 10.174.32.202
+    allow 10.174.32.206
+    allow 10.182.40.0/24
+    allow 10.190.32.0/19
+    allow admin:rhinJiY2tGxXnP6PZJEuCFWPtDRmPRy
+
+###############################################################################
+## CORE Services - updated for Ubuntu 1404
+###############################################################################
+
+check system systats
+  if loadavg (1min) > 2.0 for 4 cycles then alert
+  if loadavg (5min) > 1.8 for 4 times within 5 cycles then alert
+  if memory usage > 90% for 2 cycles then alert
+  if cpu usage (user) > 95% for 4 times within 5 cycles then alert
+  if cpu usage (system) > 65% for 10 times within 15 cycles then alert
+  if cpu usage (wait) > 75% for 5 cycles then alert
+
+check device rootfs with path /
+  if space usage > 85% for 10 times within 15 cycles then alert
+  if space usage > 90% for 15 cycles then alert
+  if space usage > 95% for 15 cycles then alert
+  if space usage > 96 % then stop
+  if inode usage > 80% for 10 times within 15 cycles then alert
+  if inode usage > 90% for 15 cycles then alert
+  if inode usage > 95% for 15 cycles then alert
+  if inode usage > 96 % then stop
+
+check device bootfs with path /boot
+  if space usage > 80% for 10 times within 15 cycles then alert
+  if space usage > 90% for 15 cycles then alert
+  if space usage > 95% for 15 cycles then alert
+  if space usage > 96 % then stop
+  if inode usage > 80% for 10 times within 15 cycles then alert
+  if inode usage > 90% for 15 cycles then alert
+  if inode usage > 95% for 15 cycles then alert
+  if inode usage > 96 % then stop
+
+check process sshd with pidfile /var/run/sshd.pid
+  restart program = "/usr/sbin/service ssh restart"
+  start program = "/usr/sbin/service ssh start"
+  stop  program = "/usr/sbin/service ssh stop"
+  if failed port 22 protocol ssh then restart
+  if 5 restarts within 5 cycles then timeout
+
+check process cron with pidfile /var/run/crond.pid
+  restart program = "/usr/sbin/service cron restart"
+  start program = "/usr/sbin/service cron start"
+  stop  program = "/usr/sbin/service cron stop"
+  if 5 restarts within 5 cycles then timeout
+
+check process ntpd with pidfile /var/run/ntpd.pid
+  restart program = "/usr/sbin/service ntp restart"
+  start program = "/usr/sbin/service ntp start"
+  stop  program = "/usr/sbin/service ntp stop"
+  if failed host 127.0.0.1 port 123 type udp for 2 times within 3 cycles then restart
+  if failed host 127.0.0.1 port 123 type udp for 4 times within 5 cycles then alert
+  if 4 restarts within 6 cycles then timeout
+
+check process rsyslogd with pidfile /var/run/rsyslogd.pid
+  restart program = "/usr/sbin/service rsyslog restart"
+  start program = "/usr/sbin/service rsyslog start"
+  stop program = "/usr/sbin/service rsyslog stop"
+  if 5 restarts within 5 cycles then timeout
+
+check file syslogd_file with path /var/log/syslog
+  if timestamp > 65 minutes then alert # Have you seen "-- MARK --"?
+
+check process postfix with pidfile /var/spool/postfix/pid/master.pid
+  restart program = "/usr/sbin/service postfix restart"
+  start program = "/usr/sbin/service postfix start"
+  stop  program = "/usr/sbin/service postfix stop"
+  if failed port 25 protocol smtp then restart
+  if 5 restarts within 5 cycles then timeout
+
+###################################################################################
+## Includes -- for Business Services
+###################################################################################
+##
+## It is possible to include additional configuration parts from other files or
+## directories.
+#
+include /etc/monit/conf.d/*
+EOF
+chmod 0600 /etc/monit/monitrc
+
+cat <<"EOF" > /etc/monit/conf.d/nginx.conf
+check process nginx-80 with pidfile /var/run/nginx.pid
+  restart program = "/usr/sbin/service nginx restart"
+  start program = "/usr/sbin/service nginx start"
+  stop program  = "/usr/sbin/service nginx stop"
+  if failed host 127.0.0.1 port 80
+     protocol http request "/"
+     with timeout 15 seconds
+     then restart
+  if 4 restarts within 5 cycles then timeout
+
+check host nginx-80-response with address localhost
+  if failed host localhost port 80 protocol http request "/"
+     with timeout 5 seconds for 3 cycles then alert
+  alert nofify@your.alert.system { connection, timeout } with mail-format {
+    from: notify@your.domain.name
+    subject: servername - $DESCRIPTION
+    message: $DATE - $ACTION $SERVICE
+  }
+EOF
+chmod 0600 /etc/monit/conf.d/nginx.conf
+
+
+########
+# setup nginx 443 (ssl monitoring)
+cat <<"EOF" > /etc/monit/conf.d/nginx-443.conf
+check process nginx-443 with pidfile /var/run/nginx.pid
+  restart program = "/usr/sbin/service nginx restart"
+  start program = "/usr/sbin/service nginx start"
+  stop program  = "/usr/sbin/service nginx stop"
+
+  if failed host your.server.domain.name port 443 type TCPSSL
+    # use your cert if you wish to carefully check these
+    # certmd5 D9-31-5E-2C-58-AE-DF-45-D9-B3-25-47-B6-89-11-03
+    protocol http request "/"
+    with timeout 15 seconds for 2 cycles
+    then restart
+  if 4 restarts within 5 cycles then timeout
+
+check host nginx-443-response with address server.domain.name
+  if failed host your.server.domain.name port 443 type tcpssl
+     protocol http request "/"
+     with timeout 5 seconds for 4 cycles
+     then alert
+  alert nofify@your.alert.system { connection, timeout } with mail-format {
+     from: notify@your.domain.name
+     subject: servername - $DESCRIPTION
+     message: $DATE - $ACTION $SERVICE
+  }
+EOF
+chmod 0600 /etc/monit/conf.d/nginx-443.conf
+
+#######
+# monitor postgres
+
+
+#######
+# monitor gunicorn
+
+
+exit
+```
+
+#### test config is good
+``` sh
+sudo monit -t -c /etc/monit/monitrc
+```
+
+#### restart monit with new config
+``` sh
+sudo service monit restart
+```
+
+#### check that all is running as expected
+``` sh
+sudo monit summary
+```
+
+
+
+#### configurfe backups
 
 
 ## resources used to build this article
