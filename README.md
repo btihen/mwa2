@@ -14,7 +14,7 @@ This is in-development code. Use it with a production Munki repo with care -- ma
 
 *   You'll need `git` installed; either via Xcode, the command-line developer tools, or a standalone install of `git`.
 
-*   Download and expand this zip:    
+*   Download and expand this zip:
     https://github.com/munki/contrib/raw/master/mwa2_demo.zip
 
 *   Via the command-line, run the script within the expanded zip:
@@ -45,10 +45,11 @@ MUNKI_REPO_DIR = '/Users/Shared/munki_repo'
 ###Linux
 
 See https://github.com/munki/mwa2/wiki/RHEL7-setup-notes for some notes on installing and configuring MWA2 on RedHad Enterprise Linux 7.
+Production ready Ubuntu 16.04 LTS using Nginx setup: https://github.com/munki/mwa2/production-ubuntu1604-nginx-postgres-setup.md
 
 ## Docker
 
-A Docker file for running MWA2 under Docker is available here: https://github.com/macadmins/docker-mwa2  
+A Docker file for running MWA2 under Docker is available here: https://github.com/macadmins/docker-mwa2
 This is maintained by a third-party; please direct support questions about the Docker file to the maintainers of that project.
 
 ## Acknowledgements
