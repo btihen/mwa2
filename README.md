@@ -44,8 +44,8 @@ MUNKI_REPO_DIR = '/Users/Shared/munki_repo'
 
 ###Linux
 
-See https://github.com/munki/mwa2/wiki/RHEL7-setup-notes for some notes on installing and configuring MWA2 on RedHad Enterprise Linux 7.
-Production ready Ubuntu 16.04 LTS using Nginx setup: https://github.com/munki/mwa2/production-ubuntu1604-nginx-postgres-setup.md
+* See https://github.com/munki/mwa2/wiki/RHEL7-setup-notes for some notes on installing and configuring MWA2 on RedHad Enterprise Linux 7.
+* Ubuntu 16.04 LTS **(production ready using nginx and postgres)**: https://github.com/btihen/mwa2/blob/master/production-ubuntu1604-nginx-postgres-setup.md 
 
 ## Docker
 
